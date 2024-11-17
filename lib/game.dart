@@ -5,7 +5,6 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import 'package:underworld_game/components/card_selection.dart';
 import 'package:underworld_game/components/enemy.dart';
 import 'package:underworld_game/components/player.dart';
 import 'package:underworld_game/components/joystick.dart';
