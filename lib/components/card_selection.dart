@@ -28,20 +28,24 @@ class CardSelectionWidget extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: cards.map((card) {
-                return GestureDetector(
-                  onTap: () {
-                    game.handleCardSelection(card); // Wywołanie metody w grze
-                    Navigator.pop(context);
-                  },
-                  child: Card(
-                    color: Colors.blue,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        card,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: Colors.white,
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8.0), // Dodanie odstępu między kartami
+                  child: GestureDetector(
+                    onTap: () {
+                      game.handleCardSelection(card); // Wywołanie metody w grze
+                      Navigator.pop(context);
+                    },
+                    child: Card(
+                      color: Colors.blue,
+                      child: Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Text(
+                          card,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),

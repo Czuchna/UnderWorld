@@ -5,10 +5,11 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import 'package:underworld_game/components/enemy.dart';
-import 'package:underworld_game/components/player.dart';
+import 'package:underworld_game/models/enemy.dart';
+import 'package:underworld_game/models/player.dart';
 import 'package:underworld_game/components/joystick.dart';
 import 'package:underworld_game/components/tower_slot.dart';
+import 'package:underworld_game/utils/algorithm.dart';
 import 'package:underworld_game/widgets/card_selection_overlay.dart';
 import 'package:underworld_game/widgets/gameover.dart';
 import 'package:underworld_game/widgets/winoverlay.dart';
@@ -17,10 +18,10 @@ import 'package:underworld_game/components/hud.dart';
 class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   late Player player;
   late HudComponent hudComponent;
-
+  late Rect spawnAreaRect;
   final List<String> selectedCards = [];
   int currentWave = 1;
-  final int totalWaves = 5;
+  final int totalWaves = 10;
   final int baseEnemiesPerWave = 5;
   int remainingEnemies = 0;
   int lives = 3;
@@ -28,6 +29,22 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   int currentExp = 0;
   int nextLevelExp = 10;
   bool isPaused = false;
+
+  static const int gridSize = 10; // Rozmiar siatki (10x10)
+  static const double slotSize = 80.0; // Rozmiar jednego slotu
+  final List<List<bool>> grid = List.generate(
+    gridSize,
+    (_) => List.generate(
+        gridSize, (_) => false), // Wszystkie pola początkowo wolne
+  );
+
+  void updateGrid(int row, int col, bool isOccupied) {
+    grid[row][col] = isOccupied;
+  }
+
+  bool isOccupied(int row, int col) {
+    return grid[row][col];
+  }
 
   final List<String> availableCards = [
     "Increase Player Damage",
@@ -39,11 +56,46 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   Future<void> onLoad() async {
     super.onLoad();
 
+    // Logowanie rozmiaru ekranu
+    print('Screen size: ${size.x}x${size.y}');
+
+    final double spawnWidth = slotSize * 2; // Szerokość spawn area
+    final double spawnHeight = slotSize; // Wysokość spawn area (opcjonalnie)
+
+    final double spawnLeft =
+        (size.x - spawnWidth) / 2; // Centrowanie na szerokości
+    final double spawnTop = 0; // Pozycja na górze ekranu
+
+    spawnAreaRect = Rect.fromLTWH(spawnLeft, spawnTop, spawnWidth, spawnHeight);
+    print('Spawn Area: $spawnAreaRect');
+
+    // Opcjonalnie: Wizualizacja obszaru spawnów dla debugowania
+    add(RectangleComponent(
+      position: Vector2(spawnAreaRect.left, spawnAreaRect.top),
+      size: Vector2(spawnAreaRect.width, spawnAreaRect.height),
+      paint: Paint()
+        ..color = Colors.blue.withOpacity(0.3)
+        ..style = PaintingStyle.fill,
+    ));
+
+    // Sprawdzenie, czy gridSize * slotSize nie przekracza wysokości ekranu
+    if (gridSize * slotSize > size.y) {
+      print(
+          "Warning: gridSize * slotSize ($gridSize * $slotSize = ${gridSize * slotSize}) exceeds screen height (${size.y})");
+    }
+
+    // Ustaw kamerę na centralny widok
+    camera.viewport = FixedResolutionViewport(
+      resolution: Vector2(size.x, size.y),
+    );
+
     // Dodanie tła
     final background = SpriteComponent()
       ..sprite = await loadSprite('background.png')
       ..size = size;
     add(background);
+
+    _startNextWave();
 
     // Dodanie slotów wież
     _initializeTowerSlots();
@@ -70,7 +122,7 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     // Dodanie nakładek
     _registerOverlays();
 
-    // Wyświetlenie wyboru kart i pauza na początku gry
+    // Start gry
     pauseGame();
     _showCardSelection();
   }
@@ -96,27 +148,28 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     );
   }
 
-  // Inicjalizacja slotów na wieże
   void _initializeTowerSlots() {
-    final double topSafeZone = size.y * 0.25;
-    final positions = [
-      Vector2(100, topSafeZone + 100),
-      Vector2(200, topSafeZone + 200),
-      Vector2(300, topSafeZone + 300),
-      Vector2(400, topSafeZone + 200),
-    ];
+    final double pathHeight =
+        size.y * 0.25; // Górne 25% zarezerwowane dla ścieżki wrogów
+    final double towerAreaHeight =
+        size.y - pathHeight; // Dolne 75% dla wieżyczek
 
-    for (final position in positions) {
-      final slot = TowerSlot(position: position);
-      add(slot);
+    final int rows = (towerAreaHeight / slotSize).floor() - 1;
+    final int cols = (size.x / slotSize).ceil();
+
+    for (int row = 0; row < rows; row++) {
+      for (int col = 0; col < cols; col++) {
+        final double x = col * slotSize;
+        final double y = pathHeight + row * slotSize;
+
+        // Dodanie slotu na siatkę
+        final slot = TowerSlot(position: Vector2(x, y), row: row, col: col);
+        add(slot);
+
+        // Aktualizacja siatki, aby początkowo sloty były wolne
+        updateGrid(row, col, false);
+      }
     }
-  }
-
-  @override
-  void onGameResize(Vector2 size) {
-    super.onGameResize(size);
-    camera.viewport =
-        FixedResolutionViewport(resolution: Vector2(size.x, size.y));
   }
 
   void reset() {
@@ -151,43 +204,83 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     hudComponent.updateExpBar(currentExp, nextLevelExp);
   }
 
-  void _onEnemyDefeated() {
-    remainingEnemies--;
-    gainExp(2); // Dodaj EXP za pokonanie przeciwnika
-    _checkWaveCompletion(); // Sprawdź, czy fala została ukończona
-  }
-
   void _startNextWave() {
-    print('Rozpoczynanie fali: $currentWave');
-    print('Generowanie potworów...');
-    // Jeśli osiągnięto maksymalną liczbę fal, wyświetl wiadomość o wygranej
     if (currentWave > totalWaves) {
       _showWinMessage();
       return;
     }
 
-    // Oblicz liczbę i zdrowie przeciwników na bieżącą falę
-    int enemiesForThisWave = baseEnemiesPerWave + (currentWave - 1) * 5;
+    int enemiesForThisWave = baseEnemiesPerWave + (currentWave - 1) * 2;
     double enemyHealth = 20.0 * currentWave;
 
     remainingEnemies = enemiesForThisWave;
+
     for (int i = 0; i < enemiesForThisWave; i++) {
+      final startPosition = _generateStartPosition();
+
       final enemy = Enemy(
-        position: _getRandomPosition(),
+        position: startPosition,
         healthPoints: enemyHealth,
       );
+
       enemy.onDefeated = _onEnemyDefeated;
       enemy.onReachBottom = _onEnemyReachBottom;
-      add(enemy);
-      print('Dodano potwora na pozycji: ${enemy.position}');
+
+      add(enemy); // Dodanie przeciwnika do gry
+      print('Enemy $i spawned at: $startPosition');
     }
 
+    print('Total enemies added this wave: $enemiesForThisWave');
+
     currentWave++;
+  }
+
+  Vector2 _generateStartPosition() {
+    final random = Random();
+    Vector2 startPosition;
+    bool validPosition = false;
+    int attempts = 0;
+    const int maxAttempts = 10;
+
+    while (!validPosition && attempts < maxAttempts) {
+      attempts++;
+      // Generuj losową pozycję w ramach obszaru spawnów
+      final double spawnX =
+          spawnAreaRect.left + random.nextDouble() * spawnAreaRect.width;
+      final double spawnY =
+          spawnAreaRect.top + random.nextDouble() * spawnAreaRect.height;
+
+      startPosition = Vector2(spawnX, spawnY);
+
+      // Sprawdź odległość od istniejących wrogów
+      bool tooClose = children.whereType<Enemy>().any((enemy) {
+        return (enemy.position - startPosition).length <
+            50; // Minimalna odległość
+      });
+
+      if (!tooClose) {
+        validPosition = true;
+        print('Valid spawn position found: $startPosition');
+        return startPosition;
+      }
+    }
+
+    // Jeśli nie znaleziono odpowiedniej pozycji po maxAttempts, zwróć losową pozycję
+    final double fallbackX =
+        spawnAreaRect.left + random.nextDouble() * spawnAreaRect.width;
+    final double fallbackY =
+        spawnAreaRect.top + random.nextDouble() * spawnAreaRect.height;
+
+    final Vector2 fallbackPosition = Vector2(fallbackX, fallbackY);
+    print('Fallback spawn position: $fallbackPosition');
+    return fallbackPosition;
   }
 
   void _onEnemyReachBottom() {
     lives--;
     hudComponent.updateLives(lives);
+
+    print('Enemy reached bottom! Lives remaining: $lives');
 
     if (lives <= 0) {
       _showGameOverMessage();
@@ -198,18 +291,21 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     _checkWaveCompletion();
   }
 
+  void _onEnemyDefeated() {
+    remainingEnemies--;
+    gainExp(10);
+    _checkWaveCompletion();
+  }
+
   void _checkWaveCompletion() {
     if (remainingEnemies <= 0) {
-      print('Wszyscy wrogowie pokonani, uruchamianie nowej fali...');
       _startNextWave();
     }
   }
 
   void _showWinMessage() {
-    Future.delayed(const Duration(milliseconds: 500), () {
-      overlays.add('WinOverlay');
-      pauseEngine();
-    });
+    overlays.add('WinOverlay');
+    pauseEngine();
   }
 
   void _showGameOverMessage() {
@@ -218,49 +314,154 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   }
 
   void _showCardSelection() {
-    pauseGame(); // Pauza gry podczas wyboru karty
-    overlays.add('CardSelection'); // Dodaj nakładkę
+    pauseGame();
+    overlays.add('CardSelection');
+  }
+
+  void pauseGame() {
+    if (!isPaused) {
+      pauseEngine();
+      isPaused = true;
+    }
+  }
+
+  void resumeGame() {
+    if (isPaused) {
+      resumeEngine();
+      isPaused = false;
+    }
   }
 
   void handleCardSelection(String card) {
     if (card.contains("Tower")) {
+      // Dodanie wieży do wybranych kart
       selectedCards.add(card);
     } else if (card == "Increase Player Damage") {
+      // Zwiększenie obrażeń gracza
       player.damage += 10;
     } else if (card == "Increase Player Speed") {
+      // Zwiększenie prędkości gracza
       player.speed += 50;
     }
 
-    overlays.remove('CardSelection'); // Usuń nakładkę wyboru kart
-    resumeGame(); // Wznów grę
+    // Usuń nakładkę wyboru kart
+    overlays.remove('CardSelection');
+    resumeGame(); // Wznowienie gry
 
-    // Uruchom kolejną falę, jeśli brak przeciwników
+    // Jeśli nie ma już przeciwników, rozpocznij nową falę
     if (remainingEnemies <= 0) {
-      print('Rozpoczęcie nowej fali po wyborze karty...');
       _startNextWave();
     }
   }
 
-  void pauseGame() {
-    pauseEngine();
-    isPaused = true;
-  }
-
-  void resumeGame() {
-    if (!isPaused) return;
-    print('Gra wznowiona.');
-    isPaused = false;
-    resumeEngine();
-    if (remainingEnemies == 0) {
-      print('Rozpoczynam falę po wznowieniu.');
-      _startNextWave();
+  List<Node> findPath(int startRow, int startCol, int endRow, int endCol) {
+    final Map<String, List<Node>> pathCache = {};
+    String key = '$startRow,$startCol-$endRow,$endCol';
+    if (pathCache.containsKey(key)) {
+      return pathCache[key]!;
     }
+    List<Node> openList = [];
+    List<Node> closedList = [];
+
+    Node startNode = Node(startRow, startCol);
+    Node endNode = Node(endRow, endCol);
+
+    openList.add(startNode);
+
+    while (openList.isNotEmpty) {
+      // Znajdź node z najmniejszym fCost
+      openList.sort((a, b) => a.fCost.compareTo(b.fCost));
+      Node currentNode = openList.first;
+
+      if (currentNode.row == endNode.row && currentNode.col == endNode.col) {
+        // Odtwórz ścieżkę
+        List<Node> path = [];
+        Node? temp = currentNode;
+        while (temp != null) {
+          path.add(temp);
+          temp = temp.parent;
+        }
+        return path.reversed.toList();
+      }
+
+      openList.remove(currentNode);
+      closedList.add(currentNode);
+
+      // Sprawdź sąsiadów (4 kierunki: góra, dół, lewo, prawo)
+      List<Node> neighbors = [];
+      List<List<int>> directions = [
+        [-1, 0],
+        [1, 0],
+        [0, -1],
+        [0, 1],
+      ];
+
+      for (var direction in directions) {
+        int newRow = currentNode.row + direction[0];
+        int newCol = currentNode.col + direction[1];
+
+        // Sprawdź granice
+        if (newRow < 0 ||
+            newRow >= gridSize ||
+            newCol < 0 ||
+            newCol >= gridSize) {
+          continue;
+        }
+
+        // Sprawdź, czy pole jest zajęte
+        if (grid[newRow][newCol]) {
+          continue;
+        }
+
+        neighbors.add(Node(newRow, newCol));
+      }
+
+      for (var neighbor in neighbors) {
+        if (closedList.any(
+            (node) => node.row == neighbor.row && node.col == neighbor.col)) {
+          continue;
+        }
+
+        double tentativeGCost = currentNode.gCost + 1; // Koszt ruchu to 1
+
+        Node? openNode = openList.firstWhere(
+          (node) => node.row == neighbor.row && node.col == neighbor.col,
+          orElse: () => Node(-1, -1),
+        );
+
+        if (openNode.row == -1 && openNode.col == -1) {
+          neighbor.gCost = tentativeGCost;
+          neighbor.hCost = (endNode.row - neighbor.row).abs() +
+              (endNode.col - neighbor.col).abs().toDouble();
+          neighbor.parent = currentNode;
+          openList.add(neighbor);
+        } else if (tentativeGCost < openNode.gCost) {
+          openNode.gCost = tentativeGCost;
+          openNode.parent = currentNode;
+        }
+      }
+    }
+
+    // Jeśli nie ma ścieżki, zwróć pustą listę
+    return [];
   }
 
-  Vector2 _getRandomPosition() {
-    final random = Random();
-    final x = random.nextDouble() * (size.x - 50);
-    final y = random.nextDouble() * (size.y * 0.3 - 50);
-    return Vector2(x, y);
+  Vector2 positionToGridIndices(Vector2 position) {
+    // Uwzględnij przesunięcie ścieżki
+    final double pathHeight = size.y * 0.25;
+    int col = (position.x / slotSize).floor();
+    int row = ((position.y - pathHeight) / slotSize).floor();
+
+    // Upewnij się, że indeksy są w granicach siatki
+    row = row.clamp(0, gridSize - 1);
+    col = col.clamp(0, gridSize - 1);
+
+    return Vector2(row.toDouble(), col.toDouble());
+  }
+
+  void updateEnemyPaths() {
+    children.whereType<Enemy>().forEach((enemy) {
+      enemy.calculatePath();
+    });
   }
 }
