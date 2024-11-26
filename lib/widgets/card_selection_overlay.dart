@@ -12,8 +12,8 @@ class CardSelectionOverlay extends StatelessWidget {
 
     return Center(
       child: Container(
-        padding: const EdgeInsets.all(16),
-        color: Colors.black.withOpacity(0.8), // Tło półprzezroczyste
+        padding: const EdgeInsets.all(4),
+        color: Colors.black.withOpacity(0.8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -26,22 +26,19 @@ class CardSelectionOverlay extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 20, // Odległość między kartami
-              runSpacing: 10, // Odległość między rzędami kart
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: cards.map((card) {
                 return GestureDetector(
                   onTap: () {
                     _onCardSelected(context, card);
                   },
                   child: Container(
-                    width: 120, // Szerokość pojedynczej karty
-                    height: 150, // Wysokość pojedynczej karty
-                    margin: const EdgeInsets.all(5),
-                    padding: const EdgeInsets.all(16),
+                    width: 120, // Stała szerokość karty
+                    height: 200, // Stała wysokość karty
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.blueAccent,
+                      color: const Color.fromARGB(255, 42, 48, 59),
                       borderRadius: BorderRadius.circular(10),
                       boxShadow: [
                         BoxShadow(
@@ -76,9 +73,9 @@ class CardSelectionOverlay extends StatelessWidget {
     if (card == "Increase Player Damage") {
       game.player.damage += 10; // Zwiększenie obrażeń gracza
     } else if (card == "Increase Player Speed") {
-      game.player.speed += 50; // Zwiększenie prędkości gracza
+      game.player.speed += 25; // Zwiększenie prędkości gracza
     } else if (card == "Add Ballista Tower") {
-      game.selectedCards.add("Ballista Tower"); // Dodanie wieży do dostępnych
+      game.selectedCards.add("Ballista Tower"); // Dodanie wieży do listy
     }
 
     game.resumeGame(); // Wznów grę po wyborze karty

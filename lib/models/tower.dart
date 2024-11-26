@@ -1,6 +1,6 @@
 import 'package:flame/components.dart';
 import 'package:flame/collisions.dart';
-import 'package:underworld_game/components/enemy.dart';
+import 'package:underworld_game/models/enemy.dart';
 
 class Tower extends SpriteComponent with HasGameRef {
   final double attackRange;
