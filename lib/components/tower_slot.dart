@@ -26,7 +26,7 @@ class TowerSlot extends PositionComponent
     log("TowerSlot loaded at position: $position (row: $row, col: $col)");
 
     // Ustawienie koloru dla slotu
-    _slotPaint = Paint()..color = Colors.green.withOpacity(0.5);
+    _slotPaint = Paint()..color = Colors.green.withOpacity(0.1);
 
     add(RectangleHitbox()
       ..collisionType = CollisionType.passive); // Dodanie kolizji
@@ -39,14 +39,14 @@ class TowerSlot extends PositionComponent
     // Kolor slotu w zależności od stanu
     _slotPaint.color = isOccupied
         ? Colors.red.withOpacity(0.5)
-        : Colors.green.withOpacity(0.5);
+        : Colors.green.withOpacity(0.12);
 
     // Rysowanie prostokąta slotu
     canvas.drawRect(size.toRect(), _slotPaint);
 
     // Dodanie ramki debugującej
     final borderPaint = Paint()
-      ..color = Colors.yellow
+      ..color = Colors.yellow.withOpacity(0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
     canvas.drawRect(size.toRect(), borderPaint);
@@ -111,11 +111,10 @@ class TowerSlot extends PositionComponent
   void buildTower() {
     if (!isOccupied) {
       isOccupied = true;
-      // Aktualizacja siatki w grze
-      (gameRef as MyGame).updateGrid(row, col, true);
-      // Aktualizacja ścieżek przeciwników
-      (gameRef as MyGame).updateEnemyPaths();
-      // Dodaj grafikę wieży itd.
+
+      gameRef.updateGrid(row, col, true);
+
+      gameRef.updateEnemyPaths();
     }
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flame/components.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
@@ -27,36 +29,10 @@ class Enemy extends SpriteComponent
         );
 
   @override
-  void render(Canvas canvas) {
-    super.render(canvas);
-
-    // Rysowanie ścieżki
-    if (path.length > 1) {
-      Paint paint = Paint()
-        ..color = Colors.blue
-        ..strokeWidth = 2;
-      for (int i = 0; i < path.length - 1; i++) {
-        canvas.drawLine(path[i].toOffset(), path[i + 1].toOffset(), paint);
-      }
-    }
-  }
-
-  @override
   Future<void> onLoad() async {
     super.onLoad();
     sprite = await gameRef.loadSprite('enemy.png');
     add(RectangleHitbox()..collisionType = CollisionType.active);
-
-    // Dodanie obrysu dla widoczności
-    add(RectangleComponent(
-      position: Vector2(0, 0),
-      size: size,
-      paint: Paint()
-        ..color = Colors.transparent
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..color = Colors.green,
-    ));
 
     healthBarBackground = RectangleComponent(
       position: Vector2(0, -10),
@@ -79,34 +55,39 @@ class Enemy extends SpriteComponent
   void update(double dt) {
     super.update(dt);
 
-    if (path.isEmpty && !recalculatingPath) {
-      recalculatingPath = true;
-      calculatePath();
-      recalculatingPath = false;
+    if (path.isEmpty) {
+      calculatePath(); // Przelicz ścieżkę, jeśli pusta
       return;
     }
 
-    if (path.isNotEmpty) {
-      final target = path.first;
+    final target = path.first;
 
-      // Kierunek ruchu przeciwnika
-      final moveDirection = (target - position).normalized();
-      position += moveDirection * speed * dt;
+    // Kierunek ruchu przeciwnika
+    final moveDirection = (target - position).normalized();
+    Vector2 nextPosition = position + moveDirection * speed * dt;
 
-      // Jeśli przeciwnik osiągnie cel w ścieżce, usuń ten cel z listy
-      if ((target - position).length < 10) {
-        path.removeAt(0);
-      }
+    // Ograniczenie ruchu w granicach gry
+    nextPosition.x = nextPosition.x.clamp(
+      gameRef.gameBounds.left + size.x / 2,
+      gameRef.gameBounds.right - size.x / 2,
+    );
+    nextPosition.y = nextPosition.y.clamp(
+      gameRef.gameBounds.top + size.y / 2,
+      gameRef.gameBounds.bottom - size.y / 2,
+    );
+
+    position = nextPosition;
+
+    // Jeśli osiągnie cel w ścieżce, usuń ten cel z listy
+    if ((target - position).length < 10) {
+      path.removeAt(0);
     }
 
-    // Sprawdzenie, czy przeciwnik dotarł do ostatniej kratki (dolnej krawędzi planszy)
-    final bottomThreshold =
-        (MyGame.gridSize - 1) * MyGame.slotSize + MyGame.slotSize / 2;
-    if (position.y >= bottomThreshold) {
-      if (onReachBottom != null) {
-        onReachBottom!(); // Wywołanie zdarzenia
-      }
-      removeFromParent(); // Usunięcie przeciwnika
+    // Sprawdzenie, czy przeciwnik dotarł na dół planszy
+    if (position.y + size.y >= gameRef.gameBounds.bottom) {
+      log('Enemy reached the bottom at $position');
+      onReachBottom?.call(); // Odejmij życie gracza
+      removeFromParent();
     }
   }
 
@@ -121,43 +102,55 @@ class Enemy extends SpriteComponent
   }
 
   void calculatePath() {
+    // Indeksy siatki dla pozycji startowej przeciwnika
     Vector2 gridIndices = gameRef.positionToGridIndices(position);
     int startRow = gridIndices.x.toInt();
     int startCol = gridIndices.y.toInt();
 
-    // Cel: dolna środkowa kolumna siatki
+    // Cel: dolny rząd, środkowa kolumna
     int endRow = MyGame.gridSize - 1;
     int endCol = (MyGame.gridSize / 2).floor();
 
-    print('Calculating path from ($startRow, $startCol) to ($endRow, $endCol)');
+    log('Calculating path from ($startRow, $startCol) to ($endRow, $endCol)');
 
     List<Node> nodePath = gameRef.findPath(startRow, startCol, endRow, endCol);
 
     if (nodePath.isNotEmpty) {
-      // Pobierz pathHeight z MyGame
       final double pathHeight = gameRef.size.y * 0.25;
 
+      // Tworzenie ścieżki opartej na węzłach
       path = nodePath.map((node) {
         return Vector2(
           node.col * MyGame.slotSize + MyGame.slotSize / 2,
-          node.row * MyGame.slotSize +
-              MyGame.slotSize / 2 +
-              pathHeight, // Dodaj pathHeight
+          node.row * MyGame.slotSize + MyGame.slotSize / 2 + pathHeight,
         );
       }).toList();
-      print('Path calculated: $path');
     } else {
-      // Jeśli nie ma ścieżki, przeciwnik idzie prosto w dół
-      path = [
-        Vector2(position.x, MyGame.gridSize * MyGame.slotSize.toDouble())
-      ];
-      print('No path found, moving straight down.');
+      log('No valid path found. Moving straight down.');
+
+      // Jeżeli nie ma ścieżki, poruszaj się w dół, unikając granic
+      double fallbackX = position.x.clamp(
+        MyGame.slotSize / 2, // Lewa granica
+        gameRef.size.x - MyGame.slotSize / 2, // Prawa granica
+      );
+      path = [Vector2(fallbackX, gameRef.size.y)];
+    }
+  }
+
+  @override
+  void onCollision(Set<Vector2> intersectionPoints, PositionComponent other) {
+    super.onCollision(intersectionPoints, other);
+
+    // Jeśli przeciwnik zderzy się z granicą lub przeszkodą
+    if (other is RectangleHitbox) {
+      log('Enemy collided with boundary at $position, recalculating path.');
+      calculatePath(); // Przelicz nową ścieżkę
     }
   }
 
   @override
   void onRemove() {
     super.onRemove();
-    print("Enemy removed: Health was $healthPoints");
+    log("Enemy removed: Health was $healthPoints");
   }
 }

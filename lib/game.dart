@@ -1,6 +1,8 @@
-import 'dart:math';
+import 'dart:developer';
+import 'dart:math' as math;
 
 import 'package:flame/camera.dart';
+import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
@@ -29,6 +31,7 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   int currentExp = 0;
   int nextLevelExp = 10;
   bool isPaused = false;
+  late Rect gameBounds = Rect.zero;
 
   static const int gridSize = 10; // Rozmiar siatki (10x10)
   static const double slotSize = 80.0; // Rozmiar jednego slotu
@@ -56,32 +59,25 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   Future<void> onLoad() async {
     super.onLoad();
 
-    // Logowanie rozmiaru ekranu
-    print('Screen size: ${size.x}x${size.y}');
+    // Definiowanie granic gry
+    gameBounds = Rect.fromLTWH(0, 0, size.x, size.y);
 
-    final double spawnWidth = slotSize * 2; // Szerokość spawn area
-    final double spawnHeight = slotSize; // Wysokość spawn area (opcjonalnie)
+    // Logowanie rozmiaru ekranu
+    log('Screen size: ${size.x}x${size.y}');
+    _initializeEdgeCollisions();
+    const double spawnWidth = slotSize * 2; // Szerokość spawn area
+    const double spawnHeight = slotSize; // Wysokość spawn area (opcjonalnie)
 
     final double spawnLeft =
         (size.x - spawnWidth) / 2; // Centrowanie na szerokości
-    final double spawnTop = 0; // Pozycja na górze ekranu
+    const double spawnTop = 0; // Pozycja na górze ekranu
 
     spawnAreaRect = Rect.fromLTWH(spawnLeft, spawnTop, spawnWidth, spawnHeight);
-    print('Spawn Area: $spawnAreaRect');
-
-    // Opcjonalnie: Wizualizacja obszaru spawnów dla debugowania
-    add(RectangleComponent(
-      position: Vector2(spawnAreaRect.left, spawnAreaRect.top),
-      size: Vector2(spawnAreaRect.width, spawnAreaRect.height),
-      paint: Paint()
-        ..color = Colors.blue.withOpacity(0.3)
-        ..style = PaintingStyle.fill,
-    ));
+    log('Spawn Area: $spawnAreaRect');
 
     // Sprawdzenie, czy gridSize * slotSize nie przekracza wysokości ekranu
     if (gridSize * slotSize > size.y) {
-      print(
-          "Warning: gridSize * slotSize ($gridSize * $slotSize = ${gridSize * slotSize}) exceeds screen height (${size.y})");
+      log("Warning: gridSize * slotSize ($gridSize * $slotSize = ${gridSize * slotSize}) exceeds screen height (${size.y})");
     }
 
     // Ustaw kamerę na centralny widok
@@ -204,7 +200,7 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     hudComponent.updateExpBar(currentExp, nextLevelExp);
   }
 
-  void _startNextWave() {
+  void _startNextWave() async {
     if (currentWave > totalWaves) {
       _showWinMessage();
       return;
@@ -216,6 +212,9 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     remainingEnemies = enemiesForThisWave;
 
     for (int i = 0; i < enemiesForThisWave; i++) {
+      await Future.delayed(
+          const Duration(milliseconds: 500)); // Opóźnienie 500 ms
+
       final startPosition = _generateStartPosition();
 
       final enemy = Enemy(
@@ -227,60 +226,48 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
       enemy.onReachBottom = _onEnemyReachBottom;
 
       add(enemy); // Dodanie przeciwnika do gry
-      print('Enemy $i spawned at: $startPosition');
+      log('Enemy $i spawned at: $startPosition');
     }
 
-    print('Total enemies added this wave: $enemiesForThisWave');
-
+    log('Total enemies added this wave: $enemiesForThisWave');
     currentWave++;
   }
 
   Vector2 _generateStartPosition() {
-    final random = Random();
-    Vector2 startPosition;
-    bool validPosition = false;
+    final random = math.Random();
     int attempts = 0;
-    const int maxAttempts = 10;
+    const int maxAttempts = 50;
 
-    while (!validPosition && attempts < maxAttempts) {
+    while (attempts < maxAttempts) {
       attempts++;
-      // Generuj losową pozycję w ramach obszaru spawnów
+
+      // Losowa kolumna w ramach obszaru spawnu
       final double spawnX =
           spawnAreaRect.left + random.nextDouble() * spawnAreaRect.width;
-      final double spawnY =
-          spawnAreaRect.top + random.nextDouble() * spawnAreaRect.height;
 
-      startPosition = Vector2(spawnX, spawnY);
+      // Ustaw górną pozycję spawnu
+      final double spawnY = spawnAreaRect.top + slotSize / 2;
 
-      // Sprawdź odległość od istniejących wrogów
-      bool tooClose = children.whereType<Enemy>().any((enemy) {
-        return (enemy.position - startPosition).length <
-            50; // Minimalna odległość
-      });
+      // Przekształcenie pozycji na siatkę
+      int col = ((spawnX - spawnAreaRect.left) / slotSize).floor();
 
-      if (!tooClose) {
-        validPosition = true;
-        print('Valid spawn position found: $startPosition');
-        return startPosition;
+      // Sprawdź, czy pole jest wolne
+      if (col >= 0 && col < gridSize && !isOccupied(0, col)) {
+        log('Valid spawn position found: ($spawnX, $spawnY) after $attempts attempts');
+        return Vector2(spawnX, spawnY);
       }
     }
 
-    // Jeśli nie znaleziono odpowiedniej pozycji po maxAttempts, zwróć losową pozycję
-    final double fallbackX =
-        spawnAreaRect.left + random.nextDouble() * spawnAreaRect.width;
-    final double fallbackY =
-        spawnAreaRect.top + random.nextDouble() * spawnAreaRect.height;
-
-    final Vector2 fallbackPosition = Vector2(fallbackX, fallbackY);
-    print('Fallback spawn position: $fallbackPosition');
-    return fallbackPosition;
+    // Fallback
+    log('Fallback spawn position used after $maxAttempts attempts.');
+    return Vector2(spawnAreaRect.center.dx, spawnAreaRect.center.dy);
   }
 
   void _onEnemyReachBottom() {
     lives--;
     hudComponent.updateLives(lives);
 
-    print('Enemy reached bottom! Lives remaining: $lives');
+    log('Enemy reached bottom! Lives remaining: $lives');
 
     if (lives <= 0) {
       _showGameOverMessage();
@@ -288,18 +275,37 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     }
 
     remainingEnemies--;
-    _checkWaveCompletion();
+    checkWaveCompletion();
   }
 
   void _onEnemyDefeated() {
     remainingEnemies--;
     gainExp(10);
-    _checkWaveCompletion();
+    checkWaveCompletion();
   }
 
-  void _checkWaveCompletion() {
+  void checkWaveCompletion() {
     if (remainingEnemies <= 0) {
-      _startNextWave();
+      log('Wave $currentWave completed. Starting next wave in 5 seconds...');
+
+      int countdown = 5;
+      hudComponent
+          .updateWaveTimer(countdown); // Wyświetlenie początkowego czasu
+
+      void tick() {
+        if (countdown > 0) {
+          countdown--;
+          hudComponent.updateWaveTimer(countdown); // Aktualizacja czasu
+
+          Future.delayed(
+              const Duration(seconds: 1), tick); // Rekurencyjne wywołanie
+        } else {
+          hudComponent.clearWaveTimer(); // Ukrycie licznika
+          _startNextWave(); // Rozpoczęcie nowej fali
+        }
+      }
+
+      tick(); // Rozpoczęcie odliczania
     }
   }
 
@@ -357,9 +363,11 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   List<Node> findPath(int startRow, int startCol, int endRow, int endCol) {
     final Map<String, List<Node>> pathCache = {};
     String key = '$startRow,$startCol-$endRow,$endCol';
+
     if (pathCache.containsKey(key)) {
       return pathCache[key]!;
     }
+
     List<Node> openList = [];
     List<Node> closedList = [];
 
@@ -369,38 +377,33 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     openList.add(startNode);
 
     while (openList.isNotEmpty) {
-      // Znajdź node z najmniejszym fCost
       openList.sort((a, b) => a.fCost.compareTo(b.fCost));
       Node currentNode = openList.first;
 
-      if (currentNode.row == endNode.row && currentNode.col == endNode.col) {
-        // Odtwórz ścieżkę
+      if (currentNode.row == endRow && currentNode.col == endCol) {
         List<Node> path = [];
         Node? temp = currentNode;
+
         while (temp != null) {
           path.add(temp);
           temp = temp.parent;
         }
-        return path.reversed.toList();
+        pathCache[key] = path.reversed.toList();
+        return pathCache[key]!;
       }
 
       openList.remove(currentNode);
       closedList.add(currentNode);
 
-      // Sprawdź sąsiadów (4 kierunki: góra, dół, lewo, prawo)
-      List<Node> neighbors = [];
-      List<List<int>> directions = [
+      for (var direction in [
         [-1, 0],
         [1, 0],
         [0, -1],
-        [0, 1],
-      ];
-
-      for (var direction in directions) {
+        [0, 1]
+      ]) {
         int newRow = currentNode.row + direction[0];
         int newCol = currentNode.col + direction[1];
 
-        // Sprawdź granice
         if (newRow < 0 ||
             newRow >= gridSize ||
             newCol < 0 ||
@@ -408,47 +411,43 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
           continue;
         }
 
-        // Sprawdź, czy pole jest zajęte
-        if (grid[newRow][newCol]) {
+        if (isOccupied(newRow, newCol)) {
           continue;
         }
 
-        neighbors.add(Node(newRow, newCol));
-      }
-
-      for (var neighbor in neighbors) {
-        if (closedList.any(
-            (node) => node.row == neighbor.row && node.col == neighbor.col)) {
+        Node neighbor = Node(newRow, newCol);
+        if (closedList
+            .any((n) => n.row == neighbor.row && n.col == neighbor.col)) {
           continue;
         }
 
-        double tentativeGCost = currentNode.gCost + 1; // Koszt ruchu to 1
+        double tentativeGCost = currentNode.gCost + 1;
 
-        Node? openNode = openList.firstWhere(
-          (node) => node.row == neighbor.row && node.col == neighbor.col,
+        Node? existingNode = openList.firstWhere(
+          (n) => n.row == neighbor.row && n.col == neighbor.col,
           orElse: () => Node(-1, -1),
         );
 
-        if (openNode.row == -1 && openNode.col == -1) {
+        if (existingNode.row == -1 && existingNode.col == -1) {
           neighbor.gCost = tentativeGCost;
-          neighbor.hCost = (endNode.row - neighbor.row).abs() +
-              (endNode.col - neighbor.col).abs().toDouble();
+          neighbor.hCost = (endRow - neighbor.row).abs() +
+              (endCol - neighbor.col).abs().toDouble();
           neighbor.parent = currentNode;
           openList.add(neighbor);
-        } else if (tentativeGCost < openNode.gCost) {
-          openNode.gCost = tentativeGCost;
-          openNode.parent = currentNode;
+        } else if (tentativeGCost < existingNode.gCost) {
+          existingNode.gCost = tentativeGCost;
+          existingNode.parent = currentNode;
         }
       }
     }
 
-    // Jeśli nie ma ścieżki, zwróć pustą listę
+    log('No path found from ($startRow, $startCol) to ($endRow, $endCol)');
     return [];
   }
 
   Vector2 positionToGridIndices(Vector2 position) {
-    // Uwzględnij przesunięcie ścieżki
-    final double pathHeight = size.y * 0.25;
+    final double pathHeight =
+        size.y * 0.25; // Górna część zarezerwowana dla ścieżki
     int col = (position.x / slotSize).floor();
     int row = ((position.y - pathHeight) / slotSize).floor();
 
@@ -463,5 +462,18 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     children.whereType<Enemy>().forEach((enemy) {
       enemy.calculatePath();
     });
+  }
+
+  void initializeGameBounds() {
+    gameBounds = Rect.fromLTWH(0, 0, size.x, size.y);
+    log('Game bounds initialized: $gameBounds');
+  }
+
+  void _initializeEdgeCollisions() {
+    for (int row = 0; row < gridSize; row++) {
+      updateGrid(row, 0, true); // Oznacz lewą krawędź jako zajętą
+      updateGrid(row, gridSize - 1, true); // Oznacz prawą krawędź jako zajętą
+    }
+    log('Grid boundaries initialized.');
   }
 }
