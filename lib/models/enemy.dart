@@ -1,12 +1,10 @@
-// Aktualizacja pliku enemy.dart
-
 import 'dart:developer';
 import 'package:flame/components.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
-import 'package:underworld_game/components/aStarPathFinder_dart';
+import 'package:underworld_game/components/aStarPathfinder.dart';
+import 'package:underworld_game/components/gameBoundries.dart';
 import 'package:underworld_game/components/tower_slot.dart';
-import 'package:underworld_game/components/unWalkableComponent.dart';
 import 'package:underworld_game/game.dart';
 
 class Enemy extends SpriteComponent
@@ -17,6 +15,7 @@ class Enemy extends SpriteComponent
   Function()? onReachBottom;
   VoidCallback? onDefeated;
   List<Vector2> path = [];
+  late GameBounds gameBounds;
 
   late RectangleComponent healthBar;
   late RectangleComponent healthBarBackground;
@@ -33,9 +32,9 @@ class Enemy extends SpriteComponent
   @override
   void onMount() {
     super.onMount();
-    log("Enemy added to game tree at position: $position");
+    gameBounds =
+        gameRef.children.firstWhere((c) => c is GameBounds) as GameBounds;
 
-    // Oblicz ścieżkę dopiero po dodaniu przeciwnika do gry
     calculatePath();
   }
 
@@ -45,6 +44,7 @@ class Enemy extends SpriteComponent
     sprite = await gameRef.loadSprite('enemy.png');
     add(RectangleHitbox()..collisionType = CollisionType.active);
 
+    // Pasek zdrowia
     healthBarBackground = RectangleComponent(
       position: Vector2(0, -10),
       size: Vector2(size.x, 5),
@@ -60,45 +60,33 @@ class Enemy extends SpriteComponent
     add(healthBar);
   }
 
-  int recalculationAttempts = 0; // Dodaj zmienną do śledzenia liczby prób
-
   @override
   void update(double dt) {
     super.update(dt);
 
-    // Jeśli ścieżka istnieje, podążaj za nią
+    // Podążanie za ścieżką
     if (path.isNotEmpty) {
       final target = path.first;
       final moveDirection = (target - position).normalized();
-
       position += moveDirection * speed * dt;
 
-      // Jeśli osiągną punkt, przechodzą do następnego w ścieżce
       if ((target - position).length < 10) {
-        log("Enemy reached waypoint $target");
         path.removeAt(0);
       }
     }
 
-    // Sprawdź, czy aktualna pozycja jest w przeszkodzie
-    final obstacles =
-        gameRef.children.whereType<UnwalkableComponent>().toList();
-    for (final obstacle in obstacles) {
-      final rect = obstacle.toRect();
-      if (rect.contains(Offset(position.x, position.y))) {
-        log("Enemy at $position is inside obstacle at ${obstacle.position}. Recalculating path...");
-        calculatePath();
-        break;
-      }
-    }
+    // Ograniczenie do granic gry
+    position.x = position.x.clamp(
+      gameBounds.position.x,
+      gameBounds.position.x + gameBounds.size.x - size.x,
+    );
+    position.y = position.y.clamp(
+      gameBounds.position.y,
+      gameBounds.position.y + gameBounds.size.y - size.y,
+    );
 
-    // Ograniczenie ruchu do obszaru gry
-    position.x = position.x.clamp(0, gameRef.size.x - size.x);
-    position.y = position.y.clamp(0, gameRef.size.y - size.y);
-
-    // Jeśli potwór dotarł do końca ekranu
-    if (position.y >= gameRef.size.y) {
-      log("Enemy reached the bottom!");
+    // Jeśli dotarł do dolnej krawędzi
+    if (position.y >= gameBounds.size.y) {
       onReachBottom?.call();
       removeFromParent();
     }
@@ -115,33 +103,29 @@ class Enemy extends SpriteComponent
   }
 
   void calculatePath() {
-    // Pobieramy wszystkie zajęte sloty jako przeszkody
     final obstacles = gameRef.children
         .whereType<TowerSlot>()
         .where((slot) => slot.isOccupied)
         .map((slot) => RectangleComponent(
               position: slot.position.clone(),
-              size: slot.size,
+              size: slot.size.clone(),
               paint: Paint()..color = Colors.transparent,
             ))
         .toList();
 
-    log("Obstacles count: ${obstacles.length}");
+    log('Obstacles in path calculation: ${obstacles.map((o) => o.position).join(", ")}');
 
-    // Punkt startowy (pozycja potwora) i docelowy (środek dolnej krawędzi ekranu)
     final start = position.clone();
-    final target = Vector2(gameRef.size.x / 2, gameRef.size.y);
+    final target = Vector2(gameBounds.size.x / 2, gameBounds.size.y);
 
-    // Wywołujemy algorytm A* z listą przeszkód
-    final pathfinder =
-        AStarPathfinder(obstacles: obstacles, gridSize: gameRef.size);
+    final pathfinder = AStarPathfinder(
+      obstacles: obstacles,
+      gridSize: gameBounds.size,
+    );
     path = pathfinder.findPath(start, target);
 
-    log("Calculated path: ${path.map((p) => '[${p.x}, ${p.y}]').join(' -> ')}");
-
     if (path.isEmpty) {
-      log("No valid path found. Falling back to straight line.");
-      path = [Vector2(start.x, target.y)];
+      path = [Vector2(position.x, gameBounds.size.y)];
     }
   }
 }

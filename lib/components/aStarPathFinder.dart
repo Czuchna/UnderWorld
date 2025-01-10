@@ -18,8 +18,7 @@ class AStarPathfinder {
     while (openList.isNotEmpty) {
       openList.sort((a, b) => fScore[a]!.compareTo(fScore[b]!));
       final current = openList.removeAt(0);
-
-      if (current == target) {
+      if ((current - target).length < 5.0) {
         return _reconstructPath(cameFrom, current);
       }
 
@@ -45,12 +44,11 @@ class AStarPathfinder {
 
   List<Vector2> _getNeighbors(Vector2 node) {
     final neighbors = <Vector2>[
-      Vector2(node.x - 50, node.y),
-      Vector2(node.x + 50, node.y),
-      Vector2(node.x, node.y - 50),
-      Vector2(node.x, node.y + 50),
+      Vector2(node.x - 10, node.y),
+      Vector2(node.x + 10, node.y),
+      Vector2(node.x, node.y - 10),
+      Vector2(node.x, node.y + 10),
     ];
-
     return neighbors.where((neighbor) => _isWithinBounds(neighbor)).toList();
   }
 
@@ -62,12 +60,12 @@ class AStarPathfinder {
   }
 
   bool _isObstacle(Vector2 point) {
-    const double padding = 5.0; // Minimalny dystans od przeszkody
     for (final obstacle in obstacles) {
-      final rect = obstacle.toRect().inflate(padding);
-      log('Checking point $point against obstacle at ${obstacle.position}, size: ${obstacle.size}');
+      final rect = obstacle
+          .toRect(); // Usuń inflate, aby zobaczyć faktyczne obszary przeszkód
+      log('Checking point $point against obstacle $rect');
       if (rect.contains(Offset(point.x, point.y))) {
-        log('Point $point is within obstacle at ${obstacle.position}');
+        log('Point $point is within obstacle $rect');
         return true;
       }
     }

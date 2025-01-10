@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flame/components.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
@@ -13,24 +11,13 @@ class UnwalkableComponent extends RectangleComponent with CollisionCallbacks {
           position: position,
           size: size,
           paint: paint ??
-              (Paint()
-                ..color =
-                    const Color(0xFF000000).withOpacity(0.5)), // Domyślny kolor
+              (Paint()..color = const Color(0xFF000000).withOpacity(0.5)),
         );
 
   @override
   @override
   Future<void> onLoad() async {
     super.onLoad();
-
-    final testObstacle = UnwalkableComponent(
-      position: Vector2(100, 100),
-      size: Vector2(80, 80),
-      paint: Paint()..color = Colors.blue.withOpacity(0.5),
-    );
-    await add(testObstacle);
-
-    log("Test obstacle added at position: ${testObstacle.position}, size: ${testObstacle.size}");
   }
 
   Vector2 globalPosition() {

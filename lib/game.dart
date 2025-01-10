@@ -8,7 +8,8 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import 'package:underworld_game/components/play_area.dart';
+import 'package:underworld_game/components/enemy/spawnPoint.dart';
+import 'package:underworld_game/components/gameBoundries.dart';
 import 'package:underworld_game/models/enemy.dart';
 import 'package:underworld_game/models/player.dart';
 import 'package:underworld_game/components/joystick.dart';
@@ -33,6 +34,8 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   int nextLevelExp = 10;
   bool isPaused = false;
   late Rect gameBounds = Rect.zero;
+  final List<SpawnPoint> spawnPoints = [];
+  final List<PositionComponent> obstacles = [];
 
   static const double slotSize = 80.0; // Rozmiar jednego slotu
 
@@ -45,12 +48,24 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   @override
   Future<void> onLoad() async {
     super.onLoad();
-    add(PlayArea());
+// Ustawienia granic gry
+    const double boundaryMargin = 50.0; // Odstęp od prawej i lewej strony
+    final gameWidth = size.x - 2 * boundaryMargin; // Szerokość obszaru gry
+    final gameHeight = size.y; // Wysokość obszaru gry
 
-    gameBounds = Rect.fromLTWH(0, 0, size.x, size.y);
+    final gameBounds = GameBounds(
+      Vector2(boundaryMargin, 0), // Pozycja granic
+      Vector2(gameWidth, gameHeight), // Rozmiar granic
+    );
+
+    add(gameBounds); // Dodanie widocznych granic
+    // Dodanie obszaru gry
+
+    // Ustawienie granic gry
     log('Screen size: ${size.x}x${size.y}');
     _initializeEdgeCollisions();
 
+    // Inicjalizacja obszaru spawn
     const double spawnWidth = slotSize * 2; // Szerokość spawn area
     const double spawnHeight = slotSize; // Wysokość spawn area
 
@@ -61,22 +76,38 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     spawnAreaRect = Rect.fromLTWH(spawnLeft, spawnTop, spawnWidth, spawnHeight);
     log('Spawn Area: $spawnAreaRect');
 
+    // Dodanie punktów spawn jako komponentów
+    spawnPoints.addAll([
+      SpawnPoint(Vector2(size.x / 4, 0)), // Punkt na górze, z lewej strony
+      SpawnPoint(Vector2(size.x / 2, 0)), // Punkt centralny na górze
+      SpawnPoint(Vector2(3 * size.x / 4, 0)), // Punkt na górze, z prawej strony
+    ]);
+    for (final spawnPoint in spawnPoints) {
+      add(spawnPoint);
+    }
+
+    // Konfiguracja kamery
     camera.viewport = FixedResolutionViewport(
       resolution: Vector2(size.x, size.y),
     );
 
+    // Dodanie tła
     final background = SpriteComponent()
       ..sprite = await loadSprite('background.png')
       ..size = size;
     add(background);
 
+    // Uruchomienie pierwszej fali przeciwników
     _startNextWave();
 
+    // Inicjalizacja slotów dla wież
     _initializeTowerSlots();
 
+    // Dodanie gracza
     player = Player();
     add(player);
 
+    // Dodanie joysticka
     final joystick = CustomJoystick(
       onMove: (Vector2 direction) {
         player.setDirection(direction);
@@ -87,11 +118,14 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     );
     add(joystick);
 
+    // Dodanie HUD
     hudComponent = HudComponent(gameRef: this);
     add(hudComponent);
 
+    // Rejestracja nakładek
     _registerOverlays();
 
+    // Pauza gry i pokazanie selekcji kart
     pauseGame();
     _showCardSelection();
   }
@@ -129,7 +163,8 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
         final double x = col * slotSize;
         final double y = pathHeight + row * slotSize;
 
-        final slot = TowerSlot(position: Vector2(x, y), row: row, col: col);
+        final slot = TowerSlot(
+            position: Vector2(x, y), row: row, col: col, isOccupied: false);
         add(slot);
       }
     }
@@ -169,11 +204,10 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   Vector2 _generateStartPosition() {
     final random = math.Random();
 
-    final double spawnX =
-        spawnAreaRect.left + random.nextDouble() * spawnAreaRect.width;
-    final double spawnY = spawnAreaRect.top + slotSize / 2;
+    // Wybieranie losowego punktu spawnu
+    final spawnPoint = spawnPoints[random.nextInt(spawnPoints.length)];
 
-    return Vector2(spawnX, spawnY);
+    return spawnPoint.position.clone();
   }
 
   void _onEnemyReachBottom() {
@@ -313,5 +347,9 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     for (final enemy in enemies) {
       enemy.calculatePath();
     }
+  }
+
+  void registerObstacle(PositionComponent obstacle) {
+    obstacles.add(obstacle);
   }
 }
