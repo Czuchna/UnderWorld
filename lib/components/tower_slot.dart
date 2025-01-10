@@ -3,6 +3,8 @@ import 'package:flame/components.dart';
 import 'package:flame/collisions.dart';
 import 'package:flame/events.dart';
 import 'package:flutter/material.dart';
+import 'package:underworld_game/components/unWalkableComponent.dart';
+import 'package:underworld_game/models/enemy.dart';
 import 'package:underworld_game/models/tower.dart';
 import 'package:underworld_game/game.dart';
 
@@ -24,12 +26,11 @@ class TowerSlot extends PositionComponent
   Future<void> onLoad() async {
     super.onLoad();
     log("TowerSlot loaded at position: $position (row: $row, col: $col)");
-
+    log("TowerSlot loaded at position: $position");
     // Ustawienie koloru dla slotu
     _slotPaint = Paint()..color = Colors.green.withOpacity(0.1);
 
-    add(RectangleHitbox()
-      ..collisionType = CollisionType.passive); // Dodanie kolizji
+    add(RectangleHitbox()..collisionType = CollisionType.active);
   }
 
   @override
@@ -84,18 +85,13 @@ class TowerSlot extends PositionComponent
                     );
                     gameRef.add(newTower); // Dodanie wieży do gry
                     isOccupied = true;
-
-                    // Aktualizacja siatki w MyGame
-                    gameRef.updateGrid(row, col, true);
+                    // Wywołanie onTowerPlaced
+                    onTowerPlaced();
 
                     // Usunięcie wybranej karty z dostępnych kart
                     gameRef.selectedCards.remove(tower);
 
-                    // Ustawienie slotu jako przeszkody
-                    add(RectangleHitbox()
-                      ..collisionType = CollisionType.active);
-
-                    Navigator.pop(context); // Zamknięcie dialogu
+                    Navigator.pop(context);
                   },
                 );
               }).toList(),
@@ -112,9 +108,36 @@ class TowerSlot extends PositionComponent
     if (!isOccupied) {
       isOccupied = true;
 
-      gameRef.updateGrid(row, col, true);
+      // Dodaj komponent RectangleHitbox dla kolizji
+      add(RectangleHitbox()..collisionType = CollisionType.active);
+      log("TowerSlot updated with a tower at position: $position");
 
-      gameRef.updateEnemyPaths();
+      // Zaktualizuj ścieżki przeciwników
+      final enemies = gameRef.children.whereType<Enemy>();
+      for (final enemy in enemies) {
+        enemy.calculatePath();
+      }
+    }
+  }
+
+  void onTowerPlaced() {
+    if (!isOccupied) {
+      isOccupied = true;
+
+      final obstacle = UnwalkableComponent(
+        position: position,
+        size: size,
+        paint: Paint()..color = Colors.red.withOpacity(0.5), // Debug
+      );
+      gameRef.add(obstacle);
+
+      log("Tower placed at position: $position. Recalculating enemy paths...");
+
+      // Ponowne przeliczenie ścieżek dla wszystkich potworów
+      final enemies = gameRef.children.whereType<Enemy>();
+      for (final enemy in enemies) {
+        enemy.calculatePath();
+      }
     }
   }
 }

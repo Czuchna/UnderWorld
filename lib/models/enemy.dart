@@ -1,10 +1,13 @@
-import 'dart:developer';
+// Aktualizacja pliku enemy.dart
 
+import 'dart:developer';
 import 'package:flame/components.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
+import 'package:underworld_game/components/aStarPathFinder_dart';
+import 'package:underworld_game/components/tower_slot.dart';
+import 'package:underworld_game/components/unWalkableComponent.dart';
 import 'package:underworld_game/game.dart';
-import 'package:underworld_game/utils/algorithm.dart';
 
 class Enemy extends SpriteComponent
     with HasGameRef<MyGame>, CollisionCallbacks {
@@ -14,7 +17,6 @@ class Enemy extends SpriteComponent
   Function()? onReachBottom;
   VoidCallback? onDefeated;
   List<Vector2> path = [];
-  bool recalculatingPath = false;
 
   late RectangleComponent healthBar;
   late RectangleComponent healthBarBackground;
@@ -27,6 +29,15 @@ class Enemy extends SpriteComponent
           position: position,
           size: Vector2(70, 70),
         );
+
+  @override
+  void onMount() {
+    super.onMount();
+    log("Enemy added to game tree at position: $position");
+
+    // Oblicz ścieżkę dopiero po dodaniu przeciwnika do gry
+    calculatePath();
+  }
 
   @override
   Future<void> onLoad() async {
@@ -47,46 +58,48 @@ class Enemy extends SpriteComponent
       paint: Paint()..color = Colors.red,
     );
     add(healthBar);
-
-    calculatePath();
   }
+
+  int recalculationAttempts = 0; // Dodaj zmienną do śledzenia liczby prób
 
   @override
   void update(double dt) {
     super.update(dt);
 
-    if (path.isEmpty) {
-      calculatePath(); // Przelicz ścieżkę, jeśli pusta
-      return;
+    // Jeśli ścieżka istnieje, podążaj za nią
+    if (path.isNotEmpty) {
+      final target = path.first;
+      final moveDirection = (target - position).normalized();
+
+      position += moveDirection * speed * dt;
+
+      // Jeśli osiągną punkt, przechodzą do następnego w ścieżce
+      if ((target - position).length < 10) {
+        log("Enemy reached waypoint $target");
+        path.removeAt(0);
+      }
     }
 
-    final target = path.first;
-
-    // Kierunek ruchu przeciwnika
-    final moveDirection = (target - position).normalized();
-    Vector2 nextPosition = position + moveDirection * speed * dt;
-
-    // Ograniczenie ruchu w granicach gry
-    nextPosition.x = nextPosition.x.clamp(
-      gameRef.gameBounds.left + size.x / 2,
-      gameRef.gameBounds.right - size.x / 2,
-    );
-    nextPosition.y = nextPosition.y.clamp(
-      gameRef.gameBounds.top + size.y / 2,
-      gameRef.gameBounds.bottom - size.y / 2,
-    );
-
-    position = nextPosition;
-
-    // Jeśli osiągnie cel w ścieżce, usuń ten cel z listy
-    if ((target - position).length < 10) {
-      path.removeAt(0);
+    // Sprawdź, czy aktualna pozycja jest w przeszkodzie
+    final obstacles =
+        gameRef.children.whereType<UnwalkableComponent>().toList();
+    for (final obstacle in obstacles) {
+      final rect = obstacle.toRect();
+      if (rect.contains(Offset(position.x, position.y))) {
+        log("Enemy at $position is inside obstacle at ${obstacle.position}. Recalculating path...");
+        calculatePath();
+        break;
+      }
     }
 
-    // Sprawdzenie, czy przeciwnik dotarł na dół planszy
-    if (position.y + size.y >= gameRef.gameBounds.bottom) {
-      log('Enemy reached the bottom at $position');
-      onReachBottom?.call(); // Odejmij życie gracza
+    // Ograniczenie ruchu do obszaru gry
+    position.x = position.x.clamp(0, gameRef.size.x - size.x);
+    position.y = position.y.clamp(0, gameRef.size.y - size.y);
+
+    // Jeśli potwór dotarł do końca ekranu
+    if (position.y >= gameRef.size.y) {
+      log("Enemy reached the bottom!");
+      onReachBottom?.call();
       removeFromParent();
     }
   }
@@ -102,55 +115,33 @@ class Enemy extends SpriteComponent
   }
 
   void calculatePath() {
-    // Indeksy siatki dla pozycji startowej przeciwnika
-    Vector2 gridIndices = gameRef.positionToGridIndices(position);
-    int startRow = gridIndices.x.toInt();
-    int startCol = gridIndices.y.toInt();
+    // Pobieramy wszystkie zajęte sloty jako przeszkody
+    final obstacles = gameRef.children
+        .whereType<TowerSlot>()
+        .where((slot) => slot.isOccupied)
+        .map((slot) => RectangleComponent(
+              position: slot.position.clone(),
+              size: slot.size,
+              paint: Paint()..color = Colors.transparent,
+            ))
+        .toList();
 
-    // Cel: dolny rząd, środkowa kolumna
-    int endRow = MyGame.gridSize - 1;
-    int endCol = (MyGame.gridSize / 2).floor();
+    log("Obstacles count: ${obstacles.length}");
 
-    log('Calculating path from ($startRow, $startCol) to ($endRow, $endCol)');
+    // Punkt startowy (pozycja potwora) i docelowy (środek dolnej krawędzi ekranu)
+    final start = position.clone();
+    final target = Vector2(gameRef.size.x / 2, gameRef.size.y);
 
-    List<Node> nodePath = gameRef.findPath(startRow, startCol, endRow, endCol);
+    // Wywołujemy algorytm A* z listą przeszkód
+    final pathfinder =
+        AStarPathfinder(obstacles: obstacles, gridSize: gameRef.size);
+    path = pathfinder.findPath(start, target);
 
-    if (nodePath.isNotEmpty) {
-      final double pathHeight = gameRef.size.y * 0.25;
+    log("Calculated path: ${path.map((p) => '[${p.x}, ${p.y}]').join(' -> ')}");
 
-      // Tworzenie ścieżki opartej na węzłach
-      path = nodePath.map((node) {
-        return Vector2(
-          node.col * MyGame.slotSize + MyGame.slotSize / 2,
-          node.row * MyGame.slotSize + MyGame.slotSize / 2 + pathHeight,
-        );
-      }).toList();
-    } else {
-      log('No valid path found. Moving straight down.');
-
-      // Jeżeli nie ma ścieżki, poruszaj się w dół, unikając granic
-      double fallbackX = position.x.clamp(
-        MyGame.slotSize / 2, // Lewa granica
-        gameRef.size.x - MyGame.slotSize / 2, // Prawa granica
-      );
-      path = [Vector2(fallbackX, gameRef.size.y)];
+    if (path.isEmpty) {
+      log("No valid path found. Falling back to straight line.");
+      path = [Vector2(start.x, target.y)];
     }
-  }
-
-  @override
-  void onCollision(Set<Vector2> intersectionPoints, PositionComponent other) {
-    super.onCollision(intersectionPoints, other);
-
-    // Jeśli przeciwnik zderzy się z granicą lub przeszkodą
-    if (other is RectangleHitbox) {
-      log('Enemy collided with boundary at $position, recalculating path.');
-      calculatePath(); // Przelicz nową ścieżkę
-    }
-  }
-
-  @override
-  void onRemove() {
-    super.onRemove();
-    log("Enemy removed: Health was $healthPoints");
   }
 }
