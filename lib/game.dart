@@ -76,7 +76,7 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   }
 
   void _initializeGrid() {
-    final int rows = (size.y / slotSize).floor() + 1;
+    final int rows = (size.y / slotSize).ceil();
     final int cols = (size.x / slotSize).ceil();
     grid = Grid(rows, cols);
     log('Grid initialized with $rows rows and $cols columns');
@@ -94,11 +94,8 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
         final slotPosition = Vector2(col * slotSize, row * slotSize);
 
         // Dodanie wizualnej siatki gry
-        final isCentralGrid = row >= offsetRow &&
-            row <
-                offsetRow +
-                    towerGridRows +
-                    1; // Dodano +1, aby uwzględnić ostatni rząd
+        final isCentralGrid =
+            row >= offsetRow && row < offsetRow + towerGridRows;
 
         add(RectangleComponent(
           position: slotPosition,
@@ -130,7 +127,7 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   void _initializeGameBounds() {
     log('Screen size: ${size.x}x${size.y}');
     const double boundaryMargin =
-        2.0; // Zmniejszone marginesy (więcej miejsca na granice)
+        1.0; // Zmniejszone marginesy (więcej miejsca na granice)
     final gameWidth = size.x - 2 * boundaryMargin;
     final gameHeight = size.y;
 
@@ -141,8 +138,9 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
         ..color =
             const Color(0xFF00FF00).withOpacity(0.7) // Widoczniejszy kolor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 6.0, // Grubsza granica
+        ..strokeWidth = 4.0, // Grubsza granica
     ));
+    log('Game bounds initialized: Width = $gameWidth, Height = $gameHeight');
   }
 
   void initializeTowerSlots() {
