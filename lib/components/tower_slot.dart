@@ -24,14 +24,6 @@ class TowerSlot extends PositionComponent
         );
 
   @override
-  void onMount() {
-    super.onMount();
-    if (isOccupied) {
-      gameRef.registerObstacle(this); // Rejestruj przeszkodę w grze
-    }
-  }
-
-  @override
   Future<void> onLoad() async {
     super.onLoad();
     log("TowerSlot loaded at position: $position (row: $row, col: $col)");
@@ -82,7 +74,7 @@ class TowerSlot extends PositionComponent
 
     // Wyświetlenie dialogu wyboru wieży
     showDialog(
-      context: gameRef.buildContext!, // Użycie buildContext z gameRef
+      context: gameRef.buildContext!,
       builder: (context) {
         return AlertDialog(
           title: const Text("Choose a Tower"),
@@ -104,30 +96,26 @@ class TowerSlot extends PositionComponent
   }
 
   void _placeTower(String tower) {
-    // Dodanie wieży
+    // Tworzenie nowej wieży
     final newTower = Tower(
       position: position,
       attackRange: 200,
       attackDamage: 20,
       attackInterval: 1.0,
     );
+
+    // Dodanie wieży do gry
     gameRef.add(newTower);
 
+    // Oznaczenie slotu jako zajętego
     isOccupied = true;
 
-    // Wywołanie logiki po postawieniu wieży
-    onTowerPlaced();
+    // Aktualizacja siatki przeszkód
+    gameRef.grid.setOccupied(row, col, true);
 
-    // Usunięcie karty
-    gameRef.selectedCards.remove(tower);
-  }
+    log("Tower placed at position: $position. Slot marked as occupied.");
 
-  void onTowerPlaced() {
-    gameRef.registerObstacle(this); // Rejestruj przeszkodę w grze
-
-    log("Tower placed at position: $position. Recalculating enemy paths...");
-
-    // Przelicz ścieżki dla wszystkich przeciwników
+    // Zaktualizowanie ścieżek przeciwników
     gameRef.updateEnemyPaths();
   }
 }

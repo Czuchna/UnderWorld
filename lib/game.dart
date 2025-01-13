@@ -1,16 +1,12 @@
-// Aktualizacja pliku game.dart
-
 import 'dart:developer';
 import 'dart:math' as math;
 
-import 'package:flame/camera.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import 'package:underworld_game/components/enemy/spawnPoint.dart';
-import 'package:underworld_game/components/gameBoundries.dart';
 import 'package:underworld_game/models/enemy.dart';
+import 'package:underworld_game/models/grid.dart';
 import 'package:underworld_game/models/player.dart';
 import 'package:underworld_game/components/joystick.dart';
 import 'package:underworld_game/components/tower_slot.dart';
@@ -22,7 +18,7 @@ import 'package:underworld_game/components/hud.dart';
 class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   late Player player;
   late HudComponent hudComponent;
-  late Rect spawnAreaRect;
+  late Grid grid; // Centralna siatka gry
   final List<String> selectedCards = [];
   int currentWave = 1;
   final int totalWaves = 10;
@@ -33,11 +29,9 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   int currentExp = 0;
   int nextLevelExp = 10;
   bool isPaused = false;
-  late Rect gameBounds = Rect.zero;
-  final List<SpawnPoint> spawnPoints = [];
-  final List<PositionComponent> obstacles = [];
+  List<TowerSlot> towerSlots = [];
 
-  static const double slotSize = 80.0; // Rozmiar jednego slotu
+  static const double slotSize = 80.0;
 
   final List<String> availableCards = [
     "Increase Player Damage",
@@ -48,66 +42,131 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   @override
   Future<void> onLoad() async {
     super.onLoad();
-// Ustawienia granic gry
-    const double boundaryMargin = 50.0; // Odstęp od prawej i lewej strony
-    final gameWidth = size.x - 2 * boundaryMargin; // Szerokość obszaru gry
-    final gameHeight = size.y; // Wysokość obszaru gry
-
-    final gameBounds = GameBounds(
-      Vector2(boundaryMargin, 0), // Pozycja granic
-      Vector2(gameWidth, gameHeight), // Rozmiar granic
-    );
-
-    add(gameBounds); // Dodanie widocznych granic
-    // Dodanie obszaru gry
-
-    // Ustawienie granic gry
-    log('Screen size: ${size.x}x${size.y}');
-    _initializeEdgeCollisions();
-
-    // Inicjalizacja obszaru spawn
-    const double spawnWidth = slotSize * 2; // Szerokość spawn area
-    const double spawnHeight = slotSize; // Wysokość spawn area
-
-    final double spawnLeft =
-        (size.x - spawnWidth) / 2; // Centrowanie na szerokości
-    const double spawnTop = 0; // Pozycja na górze ekranu
-
-    spawnAreaRect = Rect.fromLTWH(spawnLeft, spawnTop, spawnWidth, spawnHeight);
-    log('Spawn Area: $spawnAreaRect');
-
-    // Dodanie punktów spawn jako komponentów
-    spawnPoints.addAll([
-      SpawnPoint(Vector2(size.x / 4, 0)), // Punkt na górze, z lewej strony
-      SpawnPoint(Vector2(size.x / 2, 0)), // Punkt centralny na górze
-      SpawnPoint(Vector2(3 * size.x / 4, 0)), // Punkt na górze, z prawej strony
-    ]);
-    for (final spawnPoint in spawnPoints) {
-      add(spawnPoint);
-    }
-
-    // Konfiguracja kamery
-    camera.viewport = FixedResolutionViewport(
-      resolution: Vector2(size.x, size.y),
-    );
-
     // Dodanie tła
     final background = SpriteComponent()
       ..sprite = await loadSprite('background.png')
       ..size = size;
     add(background);
 
-    // Uruchomienie pierwszej fali przeciwników
-    _startNextWave();
+    // Inicjalizacja siatki
+    _initializeGrid();
+
+    // Dodanie granic gry
+    _initializeGameBounds();
 
     // Inicjalizacja slotów dla wież
-    _initializeTowerSlots();
+    initializeTowerSlots();
 
     // Dodanie gracza
     player = Player();
     add(player);
 
     // Dodanie joysticka
+    _initializeJoystick();
+
+    // Dodanie HUD
+    hudComponent = HudComponent(gameRef: this);
+    add(hudComponent);
+
+    // Rejestracja nakładek
+    _registerOverlays();
+    _showCardSelection();
+    // Uruchomienie pierwszej fali przeciwników
+    _startNextWave();
+  }
+
+  void _initializeGrid() {
+    final int rows = (size.y / slotSize).floor() + 1;
+    final int cols = (size.x / slotSize).ceil();
+    grid = Grid(rows, cols);
+    log('Grid initialized with $rows rows and $cols columns');
+
+    // Centralna część siatki dla slotów wież
+    final int towerGridRows = rows ~/ 2; // np. połowa siatki dla wież
+    final int towerGridCols = cols; // Wszystkie kolumny
+    final int offsetRow = (rows - towerGridRows) ~/ 2;
+
+    log('Central tower grid: $towerGridRows rows x $towerGridCols cols');
+    log('Offset: Row $offsetRow');
+
+    for (int row = 0; row < rows; row++) {
+      for (int col = 0; col < cols; col++) {
+        final slotPosition = Vector2(col * slotSize, row * slotSize);
+
+        // Dodanie wizualnej siatki gry
+        final isCentralGrid = row >= offsetRow &&
+            row <
+                offsetRow +
+                    towerGridRows +
+                    1; // Dodano +1, aby uwzględnić ostatni rząd
+
+        add(RectangleComponent(
+          position: slotPosition,
+          size: Vector2(slotSize, slotSize),
+          paint: (Paint()
+            ..color = isCentralGrid
+                ? Colors.blue
+                    .withOpacity(0.3) // Centralny obszar w innym kolorze
+                : Colors.red.withOpacity(0.4) // Zewnętrzna siatka
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.0),
+        ));
+
+        // Dodanie slotów wież w centralnym obszarze
+        if (isCentralGrid) {
+          final towerSlot = TowerSlot(
+            isOccupied: false,
+            row: row,
+            col: col,
+            position: slotPosition,
+          );
+          add(towerSlot);
+          towerSlots.add(towerSlot);
+        }
+      }
+    }
+  }
+
+  void _initializeGameBounds() {
+    log('Screen size: ${size.x}x${size.y}');
+    const double boundaryMargin =
+        2.0; // Zmniejszone marginesy (więcej miejsca na granice)
+    final gameWidth = size.x - 2 * boundaryMargin;
+    final gameHeight = size.y;
+
+    add(RectangleComponent(
+      position: Vector2(boundaryMargin, 0),
+      size: Vector2(gameWidth, gameHeight),
+      paint: Paint()
+        ..color =
+            const Color(0xFF00FF00).withOpacity(0.7) // Widoczniejszy kolor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6.0, // Grubsza granica
+    ));
+  }
+
+  void initializeTowerSlots() {
+    // Inicjalizacja slotów wież
+    for (final slot in children.whereType<TowerSlot>()) {
+      towerSlots.add(slot);
+    }
+  }
+
+  List<Vector2> getOccupiedSlots() {
+    return towerSlots
+        .where((slot) => slot.isOccupied)
+        .map((slot) => slot.position)
+        .toList();
+  }
+
+  List<Vector2> getFreeSlots() {
+    return towerSlots
+        .where((slot) => !slot.isOccupied)
+        .map((slot) => slot.position)
+        .toList();
+  }
+
+  void _initializeJoystick() {
     final joystick = CustomJoystick(
       onMove: (Vector2 direction) {
         player.setDirection(direction);
@@ -117,17 +176,6 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
       },
     );
     add(joystick);
-
-    // Dodanie HUD
-    hudComponent = HudComponent(gameRef: this);
-    add(hudComponent);
-
-    // Rejestracja nakładek
-    _registerOverlays();
-
-    // Pauza gry i pokazanie selekcji kart
-    pauseGame();
-    _showCardSelection();
   }
 
   void _registerOverlays() {
@@ -149,25 +197,6 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
         game: gameRef as MyGame,
       ),
     );
-  }
-
-  void _initializeTowerSlots() {
-    final double pathHeight = size.y * 0.25;
-    final double towerAreaHeight = size.y - pathHeight;
-
-    final int rows = (towerAreaHeight / slotSize).floor() - 1;
-    final int cols = (size.x / slotSize).ceil();
-
-    for (int row = 0; row < rows; row++) {
-      for (int col = 0; col < cols; col++) {
-        final double x = col * slotSize;
-        final double y = pathHeight + row * slotSize;
-
-        final slot = TowerSlot(
-            position: Vector2(x, y), row: row, col: col, isOccupied: false);
-        add(slot);
-      }
-    }
   }
 
   void _startNextWave() async {
@@ -203,11 +232,8 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
 
   Vector2 _generateStartPosition() {
     final random = math.Random();
-
-    // Wybieranie losowego punktu spawnu
-    final spawnPoint = spawnPoints[random.nextInt(spawnPoints.length)];
-
-    return spawnPoint.position.clone();
+    final spawnX = random.nextInt(grid.cols) * slotSize;
+    return Vector2(spawnX.toDouble(), 0);
   }
 
   void _onEnemyReachBottom() {
@@ -220,35 +246,19 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     }
 
     remainingEnemies--;
-    checkWaveCompletion();
+    _checkWaveCompletion();
   }
 
   void _onEnemyDefeated() {
     remainingEnemies--;
     gainExp(10);
-    checkWaveCompletion();
+    _checkWaveCompletion();
   }
 
-  void checkWaveCompletion() {
+  void _checkWaveCompletion() {
     if (remainingEnemies <= 0) {
-      log('Wave $currentWave completed. Starting next wave in 5 seconds...');
-
-      int countdown = 5;
-      hudComponent.updateWaveTimer(countdown);
-
-      void tick() {
-        if (countdown > 0) {
-          countdown--;
-          hudComponent.updateWaveTimer(countdown);
-
-          Future.delayed(const Duration(seconds: 1), tick);
-        } else {
-          hudComponent.clearWaveTimer();
-          _startNextWave();
-        }
-      }
-
-      tick();
+      log('Wave $currentWave completed.');
+      _startNextWave();
     }
   }
 
@@ -262,25 +272,6 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     pauseEngine();
   }
 
-  void _showCardSelection() {
-    pauseGame();
-    overlays.add('CardSelection');
-  }
-
-  void pauseGame() {
-    if (!isPaused) {
-      pauseEngine();
-      isPaused = true;
-    }
-  }
-
-  void resumeGame() {
-    if (isPaused) {
-      resumeEngine();
-      isPaused = false;
-    }
-  }
-
   void gainExp(int exp) {
     currentExp += exp;
 
@@ -289,67 +280,92 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
       playerLevel++;
       nextLevelExp += 10;
 
-      pauseGame();
+      log('Player leveled up to level $playerLevel');
       _showCardSelection();
     }
 
     hudComponent.updateExpBar(currentExp, nextLevelExp);
   }
 
-  void _initializeEdgeCollisions() {
-    log('Game boundaries initialized.');
-  }
-
   void handleCardSelection(String card) {
+    log('Card selected: $card');
+
     if (card.contains("Tower")) {
-      // Dodanie wieży do wybranych kart
+      // Logika dodania wieży
       selectedCards.add(card);
+      log('Card added to selected cards: $card');
     } else if (card == "Increase Player Damage") {
       // Zwiększenie obrażeń gracza
       player.damage += 10;
+      log('Player damage increased to ${player.damage}');
     } else if (card == "Increase Player Speed") {
       // Zwiększenie prędkości gracza
       player.speed += 50;
+      log('Player speed increased to ${player.speed}');
     }
 
-    // Usuń nakładkę wyboru kart
+    // Usunięcie nakładki i wznowienie gry
     overlays.remove('CardSelection');
-    resumeGame(); // Wznowienie gry
+    resumeEngine();
+  }
 
-    // Jeśli nie ma już przeciwników, rozpocznij nową falę
-    if (remainingEnemies <= 0) {
-      _startNextWave();
+  void resumeGame() {
+    if (isPaused) {
+      resumeEngine(); // Wznawia działanie silnika gry
+      isPaused = false;
+      log('Game resumed.');
     }
   }
 
   void reset() {
+    // Zresetuj falę i liczbę przeciwników
     currentWave = 1;
     remainingEnemies = 0;
+
+    // Zresetuj liczbę żyć gracza
     lives = 3;
 
-    // Usuwanie wszystkich elementów gry z wyjątkiem HUD i gracza
+    // Usuń wszystkie komponenty gry (przeciwników, wieże itp.), poza HUD i graczem
     children.where((child) => child != hudComponent && child != player).forEach(
       (child) {
         child.removeFromParent();
       },
     );
 
-    // Resetowanie pozycji gracza
-    player.position = Vector2(50, 600);
+    // Przywróć pozycję gracza
+    player.position = Vector2(50, size.y - 100);
+
+    // Zresetuj siatkę przeszkód
+    for (int row = 0; row < grid.rows; row++) {
+      for (int col = 0; col < grid.cols; col++) {
+        grid.setOccupied(row, col, false);
+      }
+    }
+
+    // Zresetuj pasek życia i inne elementy HUD
     hudComponent.updateLives(lives);
 
-    // Rozpoczęcie nowej fali
+    // Rozpocznij nową grę
     _startNextWave();
   }
 
-  void updateEnemyPaths() {
-    final enemies = children.whereType<Enemy>().toList();
-    for (final enemy in enemies) {
-      enemy.calculatePath();
+  void _showCardSelection() {
+    log('Showing card selection overlay');
+    pauseGame();
+    overlays.add('CardSelection');
+  }
+
+  void pauseGame() {
+    if (!isPaused) {
+      pauseEngine(); // Wstrzymuje silnik gry
+      isPaused = true;
+      log('Game paused.');
     }
   }
 
-  void registerObstacle(PositionComponent obstacle) {
-    obstacles.add(obstacle);
+  void updateEnemyPaths() {
+    for (final enemy in children.whereType<Enemy>()) {
+      enemy.calculatePath();
+    }
   }
 }
