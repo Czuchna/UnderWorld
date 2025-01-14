@@ -68,7 +68,7 @@ class Enemy extends SpriteComponent
 
     // Sprawdzenie, czy dotarł do dolnej krawędzi
     // Sprawdzenie, czy potwór dotarł do ostatniego rzędu siatki
-    if (position.y >= (gameRef.grid.rows) * MyGame.slotSize) {
+    if (position.y + size.y >= gameRef.size.y) {
       print('dotarl');
       onReachBottom?.call();
       removeFromParent();
@@ -116,7 +116,7 @@ class Enemy extends SpriteComponent
 
     // Wyrównanie pozycji startowej i celu do siatki
     Vector2 start = _alignToGrid(position);
-    Vector2 target = _alignToGrid(Vector2(position.x, gameRef.size.y - 40));
+    Vector2 target = Vector2(position.x, gameRef.size.y - size.y + 80);
 
     // Pobranie mapy przeszkód z gridu
     final obstacleMap = gameRef.grid.toObstacleMap();
