@@ -13,8 +13,6 @@ class AStarPathfinder {
   });
 
   List<Vector2> findPath(Vector2 start, Vector2 target) {
-    log('Finding path from $start to $target');
-
     start = _alignToGrid(start);
     target = _alignToGrid(target);
 
@@ -39,7 +37,6 @@ class AStarPathfinder {
       final current = openList.removeAt(0);
 
       if ((current - target).length < 5.0) {
-        log('Target reached at $current');
         return _reconstructPath(cameFrom, current);
       }
 
@@ -90,7 +87,6 @@ class AStarPathfinder {
     final key = '$col,$row';
 
     final isObstacle = obstacleMap[key] ?? false;
-    log('Point $point maps to [$col, $row] and isObstacle: $isObstacle');
     return isObstacle;
   }
 
