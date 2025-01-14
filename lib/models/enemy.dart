@@ -139,8 +139,8 @@ class Enemy extends SpriteComponent
 
   /// Wyrównanie punktu do siatki
   Vector2 _alignToGrid(Vector2 point) {
-    final alignedX = (point.x / 80).floor() * 80.0; // Konwersja na double
-    final alignedY = (point.y / 80).floor() * 80.0; // Konwersja na double
+    final alignedX = (point.x / 80).floor() * 80.0;
+    final alignedY = (point.y / 80).floor() * 80.0;
     return Vector2(alignedX, alignedY);
   }
 }
