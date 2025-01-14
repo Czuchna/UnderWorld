@@ -10,7 +10,6 @@ class TowerSlot extends PositionComponent
   final int row;
   final int col;
   bool isOccupied;
-  late Paint _slotPaint;
 
   TowerSlot({
     required this.isOccupied,
@@ -28,8 +27,6 @@ class TowerSlot extends PositionComponent
   Future<void> onLoad() async {
     super.onLoad();
     log("TowerSlot loaded at position: $position (row: $row, col: $col)");
-
-    _slotPaint = Paint()..color = Colors.green.withOpacity(0.1);
     add(RectangleHitbox()..collisionType = CollisionType.passive);
   }
 
