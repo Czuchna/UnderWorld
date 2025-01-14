@@ -3,119 +3,60 @@ import 'package:flame/components.dart';
 import 'package:flame/collisions.dart';
 import 'package:flame/events.dart';
 import 'package:flutter/material.dart';
-import 'package:underworld_game/models/tower.dart';
 import 'package:underworld_game/game.dart';
 
 class TowerSlot extends PositionComponent
     with HasGameRef<MyGame>, TapCallbacks, CollisionCallbacks {
-  final int row; // Rząd w siatce
-  final int col; // Kolumna w siatce
+  final int row;
+  final int col;
+  bool isOccupied;
 
-  TowerSlot({required this.row, required this.col, required Vector2 position})
-      : super(
+  TowerSlot({
+    required this.isOccupied,
+    required this.row,
+    required this.col,
+    required Vector2 position,
+  }) : super(
           position: position,
-          size: Vector2(80, 80), // Rozmiar slotu
+          size: Vector2(80, 80),
         );
-
-  bool isOccupied = false; // Czy slot jest zajęty
-  late Paint _slotPaint;
+  @override
+  int get priority => 50;
 
   @override
   Future<void> onLoad() async {
     super.onLoad();
     log("TowerSlot loaded at position: $position (row: $row, col: $col)");
-
-    // Ustawienie koloru dla slotu
-    _slotPaint = Paint()..color = Colors.green.withOpacity(0.5);
-
-    add(RectangleHitbox()
-      ..collisionType = CollisionType.passive); // Dodanie kolizji
+    add(RectangleHitbox()..collisionType = CollisionType.passive);
   }
 
-  @override
-  void render(Canvas canvas) {
-    super.render(canvas);
-
-    // Kolor slotu w zależności od stanu
-    _slotPaint.color = isOccupied
-        ? Colors.red.withOpacity(0.5)
-        : Colors.green.withOpacity(0.5);
-
-    // Rysowanie prostokąta slotu
-    canvas.drawRect(size.toRect(), _slotPaint);
-
-    // Dodanie ramki debugującej
-    final borderPaint = Paint()
-      ..color = Colors.yellow
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
-    canvas.drawRect(size.toRect(), borderPaint);
-  }
-
-  @override
-  void onTapDown(TapDownEvent event) {
-    if (!isOccupied) {
-      final availableCards =
-          gameRef.selectedCards; // Uzyskanie dostępnych kart z MyGame
-
-      if (availableCards.isEmpty) {
-        log("No available cards to place.");
-        return;
-      }
-
-      // Wyświetlenie dialogu wyboru wieży
-      showDialog(
-        context: gameRef.buildContext!, // Użycie buildContext z gameRef
-        builder: (context) {
-          return AlertDialog(
-            title: const Text("Choose a Tower"),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: availableCards.map((tower) {
-                return ListTile(
-                  title: Text(tower),
-                  onTap: () {
-                    // Dodanie wybranej wieży
-                    final newTower = Tower(
-                      position: position,
-                      attackRange: 200,
-                      attackDamage: 20,
-                      attackInterval: 1.0,
-                    );
-                    gameRef.add(newTower); // Dodanie wieży do gry
-                    isOccupied = true;
-
-                    // Aktualizacja siatki w MyGame
-                    gameRef.updateGrid(row, col, true);
-
-                    // Usunięcie wybranej karty z dostępnych kart
-                    gameRef.selectedCards.remove(tower);
-
-                    // Ustawienie slotu jako przeszkody
-                    add(RectangleHitbox()
-                      ..collisionType = CollisionType.active);
-
-                    Navigator.pop(context); // Zamknięcie dialogu
-                  },
-                );
-              }).toList(),
+  Widget buildSlotWidget() {
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (DragTargetDetails<String> details) {
+        final canAccept = !isOccupied && details.data == "Add Ballista Tower";
+        debugPrint(
+            'onWillAcceptWithDetails: Slot=($row, $col), CanAccept=$canAccept, Data=${details.data}');
+        return canAccept;
+      },
+      onAcceptWithDetails: (DragTargetDetails<String> details) {
+        debugPrint('onAcceptWithDetails: Accepted=${details.data}');
+        isOccupied = true; // Oznacz slot jako zajęty
+        gameRef.selectedCards.remove(details.data); // Usuń kartę z dostępnych
+        gameRef.addTowerAtSlot(row, col, details.data); // Dodaj wieżę do gry
+      },
+      builder: (context, candidateData, rejectedData) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.green.withOpacity(0.1),
+            border: Border.all(
+              color: Colors.green,
+              width: 1,
             ),
-          );
-        },
-      );
-    } else {
-      log("Slot already occupied.");
-    }
-  }
-
-  void buildTower() {
-    if (!isOccupied) {
-      isOccupied = true;
-      // Aktualizacja siatki w grze
-      (gameRef as MyGame).updateGrid(row, col, true);
-      // Aktualizacja ścieżek przeciwników
-      (gameRef as MyGame).updateEnemyPaths();
-      // Dodaj grafikę wieży itd.
-    }
+          ),
+          width: 80,
+          height: 80,
+        );
+      },
+    );
   }
 }

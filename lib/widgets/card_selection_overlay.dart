@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:underworld_game/game.dart';
 
@@ -70,15 +72,21 @@ class CardSelectionOverlay extends StatelessWidget {
   }
 
   void _onCardSelected(BuildContext context, String card) {
+    log('Card selected: $card'); // Log wybranej karty
+
     if (card == "Increase Player Damage") {
-      game.player.damage += 10; // Zwiększenie obrażeń gracza
+      game.player.damage += 10;
+      log('Player damage increased to ${game.player.damage}');
     } else if (card == "Increase Player Speed") {
-      game.player.speed += 25; // Zwiększenie prędkości gracza
+      game.player.speed += 25;
+      log('Player speed increased to ${game.player.speed}');
     } else if (card == "Add Ballista Tower") {
-      game.selectedCards.add("Ballista Tower"); // Dodanie wieży do listy
+      game.selectedCards.add(card); // Dodanie wieży
+      log('Card added to selectedCards: ${game.selectedCards}');
+      game.updateTowerCarousel(); // Aktualizacja widoczności carouselu
     }
 
-    game.resumeGame(); // Wznów grę po wyborze karty
-    game.overlays.remove('CardSelection'); // Usuń nakładkę
+    game.resumeGame();
+    game.overlays.remove('CardSelection');
   }
 }

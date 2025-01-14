@@ -16,6 +16,9 @@ class CustomJoystick extends Component with DragCallbacks {
   });
 
   @override
+  int get priority => 100; // Wyższy priorytet niż sloty czy inne komponenty
+
+  @override
   Future<void> onLoad() async {
     super.onLoad();
 
@@ -45,13 +48,13 @@ class CustomJoystick extends Component with DragCallbacks {
 
   @override
   bool containsLocalPoint(Vector2 point) {
-    // Ustawienie, że joystick reaguje na każde dotknięcie
     return true;
   }
 
   @override
   bool onDragStart(DragStartEvent event) {
     super.onDragStart(event);
+
     // Pokaż joystick w miejscu dotknięcia
     background.position = event.localPosition - Vector2.all(50);
     knob.position = event.localPosition - Vector2.all(20);

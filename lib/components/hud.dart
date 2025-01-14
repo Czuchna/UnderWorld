@@ -10,12 +10,35 @@ class HudComponent extends PositionComponent {
   late Rect expBarForeground;
   late Paint expBarBgPaint;
   late Paint expBarFgPaint;
+  late TextComponent waveTimerText;
 
   HudComponent({required this.gameRef}) : super(priority: 10);
 
   @override
   Future<void> onLoad() async {
     super.onLoad();
+
+// Inicjalizacja tekstu licznika
+    waveTimerText = TextComponent(
+      text: '',
+      textRenderer: TextPaint(
+        style: const TextStyle(
+          fontSize: 32, // Większy rozmiar czcionki
+          color: Colors.white,
+          fontWeight: FontWeight.bold, // Pogrubienie dla lepszej widoczności
+        ),
+      ),
+    );
+
+    // Umieść licznik na środku górnej części ekranu
+    waveTimerText.anchor =
+        Anchor.center; // Ustawienie punktu zaczepienia na środek
+    waveTimerText.position = Vector2(
+      gameRef.size.x / 2, // Środek w poziomie
+      120, // Odległość od góry
+    );
+
+    add(waveTimerText); // Dodanie komponentu do HUD
 
     // Wysokość status bara
     final double statusBarHeight = MediaQueryData.fromView(
@@ -76,5 +99,14 @@ class HudComponent extends PositionComponent {
   // Aktualizacja liczby żyć
   void updateLives(int lives) {
     livesText.text = _generateLivesText(lives); // Aktualizacja tekstu
+  }
+
+  void updateWaveTimer(int seconds) {
+    waveTimerText.text =
+        '0:${seconds.toString().padLeft(2, '0')}s'; // Aktualizacja tekstu
+  }
+
+  void clearWaveTimer() {
+    waveTimerText.text = ''; // Ukrycie licznika przez ustawienie pustego tekstu
   }
 }
