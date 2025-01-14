@@ -10,8 +10,10 @@ import 'package:underworld_game/models/grid.dart';
 import 'package:underworld_game/models/player.dart';
 import 'package:underworld_game/components/joystick.dart';
 import 'package:underworld_game/components/tower_slot.dart';
+import 'package:underworld_game/models/tower.dart';
 import 'package:underworld_game/widgets/card_selection_overlay.dart';
 import 'package:underworld_game/widgets/gameover.dart';
+import 'package:underworld_game/widgets/tower_carousel.dart';
 import 'package:underworld_game/widgets/winoverlay.dart';
 import 'package:underworld_game/components/hud.dart';
 
@@ -30,6 +32,11 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   int nextLevelExp = 10;
   bool isPaused = false;
   List<TowerSlot> towerSlots = [];
+  String? selectedTower;
+  static late MyGame instance;
+  MyGame() {
+    instance = this;
+  }
 
   static const double slotSize = 80.0;
 
@@ -55,7 +62,12 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     _initializeGameBounds();
 
     // Inicjalizacja slotów dla wież
-    initializeTowerSlots();
+    initializeSlotWidgets();
+
+    // Aktywuj nakładki po ich dodaniu
+    for (final slot in towerSlots) {
+      overlays.add('TowerSlot-${slot.row}-${slot.col}');
+    }
 
     // Dodanie gracza
     player = Player();
@@ -63,6 +75,9 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
 
     // Dodanie joysticka
     _initializeJoystick();
+
+    //dodanie carouselu wież
+    _initializeTowerCarousel();
 
     // Dodanie HUD
     hudComponent = HudComponent(gameRef: this);
@@ -103,7 +118,7 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
           paint: (Paint()
             ..color = isCentralGrid
                 ? Colors.blue
-                    .withOpacity(0.3) // Centralny obszar w innym kolorze
+                    .withOpacity(0.8) // Centralny obszar w innym kolorze
                 : Colors.red.withOpacity(0.4) // Zewnętrzna siatka
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.0),
@@ -144,9 +159,18 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   }
 
   void initializeTowerSlots() {
-    // Inicjalizacja slotów wież
-    for (final slot in children.whereType<TowerSlot>()) {
-      towerSlots.add(slot);
+    for (final slot in towerSlots) {
+      overlays.addEntry(
+        'TowerSlot-${slot.row}-${slot.col}',
+        (BuildContext context, Game gameRef) {
+          return Positioned(
+            left: slot.position.x,
+            top: slot.position.y,
+            child: slot
+                .buildSlotWidget(), // Użycie metody TowerSlot.buildSlotWidget
+          );
+        },
+      );
     }
   }
 
@@ -173,6 +197,7 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
         player.stop();
       },
     );
+
     add(joystick);
   }
 
@@ -195,6 +220,16 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
         game: gameRef as MyGame,
       ),
     );
+    overlays.addEntry('TowerCarousel', (BuildContext context, Game gameRef) {
+      final myGame = gameRef as MyGame;
+      return TowerCarousel(
+        towers: myGame.selectedCards, // Lista dostępnych wież
+        onTowerSelected: (tower) {
+          myGame.selectedTower = tower; // Ustawienie wybranej wieży
+          log("Selected tower: $tower");
+        },
+      );
+    });
   }
 
   void _startNextWave() async {
@@ -289,20 +324,21 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
     log('Card selected: $card');
 
     if (card.contains("Tower")) {
-      // Logika dodania wieży
+      // Dodanie wieży do selectedCards
       selectedCards.add(card);
       log('Card added to selected cards: $card');
     } else if (card == "Increase Player Damage") {
-      // Zwiększenie obrażeń gracza
       player.damage += 10;
       log('Player damage increased to ${player.damage}');
     } else if (card == "Increase Player Speed") {
-      // Zwiększenie prędkości gracza
       player.speed += 50;
       log('Player speed increased to ${player.speed}');
     }
 
-    // Usunięcie nakładki i wznowienie gry
+    // Aktualizacja interfejsu
+    updateTowerCarousel();
+
+    // Usunięcie nakładki wyboru kart
     overlays.remove('CardSelection');
     resumeEngine();
   }
@@ -364,6 +400,97 @@ class MyGame extends FlameGame with HasCollisionDetection, DragCallbacks {
   void updateEnemyPaths() {
     for (final enemy in children.whereType<Enemy>()) {
       enemy.calculatePath();
+    }
+  }
+
+  void _initializeTowerCarousel() {
+    overlays.addEntry(
+      'TowerCarousel',
+      (BuildContext context, Game gameRef) {
+        final myGame = gameRef as MyGame;
+        return TowerCarousel(
+          towers: myGame.selectedCards,
+          onTowerSelected: (tower) {
+            myGame.selectedTower = tower; // Ustawienie aktualnie wybranej wieży
+            log("Selected tower: $tower");
+          },
+        );
+      },
+    );
+  }
+
+  void updateTowerCarousel() {
+    if (selectedCards.isNotEmpty) {
+      if (!overlays.isActive('TowerCarousel')) {
+        overlays.add('TowerCarousel');
+        log('TowerCarousel shown');
+      }
+    } else {
+      if (overlays.isActive('TowerCarousel')) {
+        overlays.remove('TowerCarousel');
+        log('TowerCarousel hidden');
+      }
+    }
+  }
+
+  void addTowerAtSlot(int row, int col, String tower) {
+    final slot =
+        towerSlots.firstWhere((slot) => slot.row == row && slot.col == col);
+    slot.isOccupied = true;
+    grid.setOccupied(row, col, true);
+    final newTower = Tower(
+      position: slot.position,
+      attackRange: 200,
+      attackDamage: 20,
+      attackInterval: 1.0,
+    );
+
+    add(newTower);
+    updateTowerCarousel();
+  }
+
+  void handleTowerPlacement(String tower, int row, int col) {
+    print('Placing tower $tower at slot ($row, $col)');
+
+    // Znajdź odpowiedni slot
+    final slot = towerSlots.firstWhere((s) => s.row == row && s.col == col);
+    if (slot.isOccupied) {
+      print('Slot already occupied!');
+      return;
+    }
+
+    // Oznacz slot jako zajęty
+    slot.isOccupied = true;
+
+    // Dodaj wieżę do gry
+    final newTower = Tower(
+      position: slot.position,
+      attackRange: 200,
+      attackDamage: 20,
+      attackInterval: 1.0,
+    );
+    add(newTower);
+
+    // Aktualizuj interfejs
+    selectedCards.remove(tower);
+    updateTowerCarousel();
+
+    print('Tower $tower placed successfully!');
+  }
+
+  void initializeSlotWidgets() {
+    log('Initializing slot widgets...');
+    for (final slot in towerSlots) {
+      overlays.addEntry(
+        'TowerSlot-${slot.row}-${slot.col}',
+        (BuildContext context, Game gameRef) {
+          return Positioned(
+            left: slot.position.x,
+            top: slot.position.y,
+            child: slot.buildSlotWidget(),
+          );
+        },
+      );
     }
   }
 }

@@ -19,10 +19,18 @@ class GameScreen extends StatelessWidget {
           GameWidget(
             game: game,
             overlayBuilderMap: {
+              // Dodajemy nakładki dla slotów
+              for (final slot in game.towerSlots)
+                'TowerSlot-${slot.row}-${slot.col}': (context, MyGame gameRef) {
+                  return Positioned(
+                    left: slot.position.x,
+                    top: slot.position.y,
+                    child: slot.buildSlotWidget(),
+                  );
+                },
               // Nakładka ekranu przegranej
               'GameOverOverlay': (context, MyGame gameRef) =>
                   GameOverOverlay(gameRef: gameRef),
-
               // Nakładka ekranu wygranej
               'WinOverlay': (context, MyGame gameRef) =>
                   WinOverlay(gameRef: gameRef),

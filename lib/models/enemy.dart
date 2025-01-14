@@ -83,6 +83,8 @@ class Enemy extends SpriteComponent
       final col = (target.x / 80).floor();
       final row = (target.y / 80).floor();
       if (gameRef.grid.isOccupied(row, col)) {
+        log('Current position: $position, Target: $target');
+        log('Row: $row, Col: $col, Occupied: ${gameRef.grid.isOccupied(row, col)}');
         log('Target $target is occupied. Recalculating path.');
         calculatePath();
         return;
@@ -112,8 +114,6 @@ class Enemy extends SpriteComponent
   }
 
   void calculatePath() {
-    log('Calculating path for enemy at position: $position');
-
     // Wyrównanie pozycji startowej i celu do siatki
     Vector2 start = _alignToGrid(position);
     Vector2 target = Vector2(position.x, gameRef.size.y - size.y + 80);
@@ -130,11 +130,8 @@ class Enemy extends SpriteComponent
     path = pathfinder.findPath(start, target);
 
     if (path.isEmpty) {
-      log('No valid path found. Moving directly downwards.');
       path = [Vector2(position.x, gameRef.size.y)];
-    } else {
-      log('Path found: $path');
-    }
+    } else {}
   }
 
   /// Wyrównanie punktu do siatki
